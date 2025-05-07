@@ -17,6 +17,7 @@ const MedicaoOptica = () => {
   const canvasRef = useRef(null);
   const [dadosMedicao, setDadosMedicao] = useState(null);
   const [mensagem, setMensagem] = useState("Posicione-se de frente, com boa iluminação");
+  const [capturar, setCapturar] = useState(false);
 
   useEffect(() => {
     const faceMeshInstance = new faceMesh.FaceMesh({
@@ -42,7 +43,7 @@ const MedicaoOptica = () => {
       });
       camera.start();
     }
-  }, []);
+  }, [capturar]);
 
   const onResults = (results) => {
     const canvas = canvasRef.current;
@@ -50,7 +51,7 @@ const MedicaoOptica = () => {
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0 && capturar) {
       const landmarks = results.multiFaceLandmarks[0];
 
       const inclinacao = validarAngulo(landmarks);
@@ -71,8 +72,9 @@ const MedicaoOptica = () => {
         timestamp: new Date().toISOString(),
       };
 
-      setMensagem("Medição bem-sucedida");
+      setMensagem("Medição capturada com sucesso");
       setDadosMedicao(dados);
+      setCapturar(false);
     }
   };
 
@@ -87,6 +89,14 @@ const MedicaoOptica = () => {
       <Webcam ref={webcamRef} style={{ display: 'none' }} />
       <canvas ref={canvasRef} width={640} height={480} className="mx-auto border-2 border-[#FF7B30]" />
       <OverlayVisual mensagem={mensagem} />
+
+      <button
+        className="mt-4 px-4 py-2 bg-[#7A30A8] text-white rounded hover:bg-[#5c247c]"
+        onClick={() => setCapturar(true)}
+      >
+        Capturar Medição
+      </button>
+
       {dadosMedicao && (
         <div className="mt-4">
           <p>DNP OD: {dadosMedicao.dnp.direita_mm} mm</p>
