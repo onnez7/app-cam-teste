@@ -1,4 +1,4 @@
-
+// 📁 src/components/MedicaoOptica.jsx
 import React, { useRef, useEffect, useState } from 'react';
 import Webcam from 'react-webcam';
 import * as faceMesh from '@mediapipe/face_mesh';
@@ -14,10 +14,10 @@ import {
   FaceLandmarker,
 } from '@mediapipe/tasks-vision';
 
+// Instancia do Supabase
+const supabase = createClient('https://pfjqttbdxwsvkmtnfwtr.supabase.co', 'CHAVE_PUBLICA_AQUI');
 
-const supabase = createClient('https://pfjqttbdxwsvkmtnfwtr.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmanF0dGJkeHdzdmttdG5md3RyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY0NjA1ODQsImV4cCI6MjA2MjAzNjU4NH0.paABiUZmRabnudg-P9n2v6QzmwuEMLX2uV5_W-3J0Wc');
-
-
+// Função auxiliar para converter base64 em arquivo
 function dataURLtoFile(dataUrl, filename) {
   const arr = dataUrl.split(','), mime = arr[0].match(/:(.*?);/)[1],
     bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
@@ -25,11 +25,11 @@ function dataURLtoFile(dataUrl, filename) {
   return new File([u8arr], filename, { type: mime });
 }
 
-
-
 const MedicaoOptica = () => {
   const webcamRef = useRef(null);
   const canvasRef = useRef(null);
+
+  // Estados principais
   const [dadosMedicao, setDadosMedicao] = useState(null);
   const [mensagem, setMensagem] = useState("Posicione-se de frente, com boa iluminação");
   const [capturar, setCapturar] = useState(false);
@@ -37,20 +37,21 @@ const MedicaoOptica = () => {
   const [modoResultado, setModoResultado] = useState(false);
   const [medidaCorreta, setMedidaCorreta] = useState({ dnpOD: '', dnpOE: '' });
 
+  // Inicialização da câmera + MediaPipe FaceMesh
   useEffect(() => {
     const faceMeshInstance = new faceMesh.FaceMesh({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
     });
-  
+
     faceMeshInstance.setOptions({
       maxNumFaces: 1,
       refineLandmarks: true,
-      minDetectionConfidence: 0.9,
-      minTrackingConfidence: 0.9,
+      minDetectionConfidence: 0.8, // ajustado para evitar falsos negativos
+      minTrackingConfidence: 0.8,
     });
-  
+
     faceMeshInstance.onResults(onResults);
-  
+
     const iniciarCamera = () => {
       if (webcamRef.current && webcamRef.current.video.readyState === 4) {
         const camera = new cam.Camera(webcamRef.current.video, {
@@ -62,19 +63,21 @@ const MedicaoOptica = () => {
         });
         camera.start();
       } else {
-        setTimeout(iniciarCamera, 100); // tenta novamente em 100ms
+        setTimeout(iniciarCamera, 100);
       }
     };
-  
+
     iniciarCamera();
   }, []);
 
+  // Lógica ao receber resultado da MediaPipe
   const onResults = (results) => {
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
+    // Só continua se o botão "capturar" foi clicado
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0 && capturar) {
       const landmarks = results.multiFaceLandmarks[0];
 
@@ -84,6 +87,7 @@ const MedicaoOptica = () => {
         return;
       }
 
+      // Cálculo das medidas
       const dnp = calcularDNP(landmarks, canvas.width);
       const alturaCentro = calcularAlturaCentro(landmarks, canvas.height);
       const distanciaCM = estimarDistancia(landmarks, canvas.width);
@@ -96,9 +100,8 @@ const MedicaoOptica = () => {
         timestamp: new Date().toISOString(),
       };
 
-      // Captura da imagem
+      // Captura da imagem e feedback
       const imageData = canvas.toDataURL('image/png');
-
       setImagemCapturada(imageData);
       setDadosMedicao(dados);
       setCapturar(false);
@@ -110,9 +113,9 @@ const MedicaoOptica = () => {
     }
   };
 
+  // Envio para Supabase (imagem e dados)
   const salvarMedicao = async () => {
     try {
-      // salvar a imagem no Supabase Storage (opcional)
       const file = dataURLtoFile(imagemCapturada, 'captura.png');
       const { data, error: uploadError } = await supabase.storage
         .from('capturas')
@@ -120,16 +123,13 @@ const MedicaoOptica = () => {
           contentType: 'image/png',
           upsert: true,
         });
-  
-      if (uploadError) {
-        console.error('Erro ao subir imagem no storage:', uploadError);
-      }
-  
+
+      if (uploadError) console.error('Erro ao subir imagem:', uploadError);
+
       const urlImagem = data?.path
         ? `https://pfjqttbdxwsvkmtnfwtr.supabase.co/storage/v1/object/public/capturas/${data.path}`
         : imagemCapturada;
-  
-      // salvar no banco de dados
+
       const { error: dbError } = await supabase.from('medicoes_opticas').insert([
         {
           ...dadosMedicao,
@@ -138,14 +138,14 @@ const MedicaoOptica = () => {
           medidaCorreta_oe: medidaCorreta.dnpOE,
         },
       ]);
-  
-      if (dbError) console.error('Erro ao salvar no Supabase DB:', dbError);
+
+      if (dbError) console.error('Erro ao salvar no banco:', dbError);
     } catch (e) {
       console.error('Erro geral ao salvar:', e);
     }
   };
-  
 
+  // Reset da aplicação
   const reiniciar = () => {
     setDadosMedicao(null);
     setImagemCapturada(null);
@@ -156,8 +156,10 @@ const MedicaoOptica = () => {
   return (
     <div className="w-screen h-screen flex flex-col items-center justify-start p-2 bg-white">
       <h1 className="text-xl font-bold text-[#7A30A8] mt-2">Medição Óptica Visão+</h1>
+
       {!modoResultado && (
         <>
+          {/* Webcam oculta usada pela MediaPipe */}
           <Webcam
             ref={webcamRef}
             screenshotFormat="image/png"
@@ -167,20 +169,19 @@ const MedicaoOptica = () => {
               height: { ideal: 640 },
             }}
             mirrored
-            style={{
-              display: 'none',
-              transform: 'scaleX(-1)',
-              zoom: 1,
-              objectFit: 'cover',
-            }}
+            style={{ display: 'none' }}
           />
+
+          {/* Canvas visível para desenhar resultados */}
           <canvas
             ref={canvasRef}
             width={480}
             height={640}
             className="rounded-xl shadow border-2 border-[#FF7B30]"
           />
+
           <OverlayVisual mensagem={mensagem} />
+
           <button
             onClick={() => setCapturar(true)}
             className="mt-4 px-6 py-3 bg-[#7A30A8] text-white rounded-full text-sm shadow hover:bg-[#692391] transition-all"
@@ -190,9 +191,11 @@ const MedicaoOptica = () => {
         </>
       )}
 
+      {/* Tela de resultado final */}
       {modoResultado && dadosMedicao && (
         <div className="w-full flex flex-col items-center animate-fade-in">
           <img src={imagemCapturada} alt="Captura" className="w-64 rounded-lg border mt-4" />
+
           <div className="text-sm mt-4 space-y-1">
             <p>DNP OD: {dadosMedicao.dnp.direita_mm} mm</p>
             <p>DNP OE: {dadosMedicao.dnp.esquerda_mm} mm</p>
