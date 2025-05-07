@@ -4,22 +4,18 @@ import { useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import * as faceMesh from '@mediapipe/face_mesh';
 import * as cam from '@mediapipe/camera_utils';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import OverlayVisual from './OverlayVisual';
 import { calcularDNP } from './helpers/calcDnp';
 import { calcularAlturaCentro } from './helpers/calcAlturaCentro';
 import { estimarDistancia } from './helpers/estimarDistancia';
 import { validarAngulo } from './helpers/validarAngulo';
-import {
-  FilesetResolver,
-  FaceLandmarker,
-} from '@mediapipe/tasks-vision';
-
-const supabase = createClient('https://pfjqttbdxwsvkmtnfwtr.supabase.co', 'CHAVE_PUBLICA_AQUI');
 
 function dataURLtoFile(dataUrl, filename) {
   const arr = dataUrl.split(','), mime = arr[0].match(/:(.*?);/)[1],
-    bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+        bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
   while (n--) u8arr[n] = bstr.charCodeAt(n);
   return new File([u8arr], filename, { type: mime });
 }
@@ -34,7 +30,7 @@ const MedicaoOptica = () => {
 
   useEffect(() => {
     const faceMeshInstance = new faceMesh.FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`,
     });
 
     faceMeshInstance.setOptions({
@@ -96,7 +92,6 @@ const MedicaoOptica = () => {
       const audio = new Audio('/snap.mp3');
       audio.play();
 
-      // Redireciona com os dados para a rota de resultado
       navigate('/resultado', { state: { dados, imagem: imageData } });
     }
   };
