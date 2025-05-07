@@ -1,4 +1,4 @@
-// 📁 src/components/MedicaoOptica.jsx
+
 import React, { useRef, useEffect, useState } from 'react';
 import Webcam from 'react-webcam';
 import * as faceMesh from '@mediapipe/face_mesh';
@@ -9,8 +9,23 @@ import { calcularDNP } from './helpers/calcDnp';
 import { calcularAlturaCentro } from './helpers/calcAlturaCentro';
 import { estimarDistancia } from './helpers/estimarDistancia';
 import { validarAngulo } from './helpers/validarAngulo';
+import {
+  FilesetResolver,
+  FaceLandmarker,
+} from '@mediapipe/tasks-vision';
 
-const supabase = createClient('https://SEU-PROJETO.supabase.co', 'CHAVE_PUBLICA_SUPABASE');
+
+const supabase = createClient('https://pfjqttbdxwsvkmtnfwtr.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmanF0dGJkeHdzdmttdG5md3RyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY0NjA1ODQsImV4cCI6MjA2MjAzNjU4NH0.paABiUZmRabnudg-P9n2v6QzmwuEMLX2uV5_W-3J0Wc');
+
+
+function dataURLtoFile(dataUrl, filename) {
+  const arr = dataUrl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+    bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new File([u8arr], filename, { type: mime });
+}
+
+
 
 const MedicaoOptica = () => {
   const webcamRef = useRef(null);
@@ -26,27 +41,33 @@ const MedicaoOptica = () => {
     const faceMeshInstance = new faceMesh.FaceMesh({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
     });
-
+  
     faceMeshInstance.setOptions({
       maxNumFaces: 1,
       refineLandmarks: true,
       minDetectionConfidence: 0.9,
       minTrackingConfidence: 0.9,
     });
-
+  
     faceMeshInstance.onResults(onResults);
-
-    if (webcamRef.current?.video) {
-      const camera = new cam.Camera(webcamRef.current.video, {
-        onFrame: async () => {
-          await faceMeshInstance.send({ image: webcamRef.current.video });
-        },
-        width: 480,
-        height: 640,
-      });
-      camera.start();
-    }
-  }, [capturar]);
+  
+    const iniciarCamera = () => {
+      if (webcamRef.current && webcamRef.current.video.readyState === 4) {
+        const camera = new cam.Camera(webcamRef.current.video, {
+          onFrame: async () => {
+            await faceMeshInstance.send({ image: webcamRef.current.video });
+          },
+          width: 480,
+          height: 640,
+        });
+        camera.start();
+      } else {
+        setTimeout(iniciarCamera, 100); // tenta novamente em 100ms
+      }
+    };
+  
+    iniciarCamera();
+  }, []);
 
   const onResults = (results) => {
     const canvas = canvasRef.current;
@@ -90,16 +111,40 @@ const MedicaoOptica = () => {
   };
 
   const salvarMedicao = async () => {
-    const { error } = await supabase.from('medicoes_opticas').insert([
-      {
-        ...dadosMedicao,
-        imagem: imagemCapturada,
-        medidaCorreta_od: medidaCorreta.dnpOD,
-        medidaCorreta_oe: medidaCorreta.dnpOE,
-      },
-    ]);
-    if (error) console.error('Erro ao salvar no Supabase:', error);
+    try {
+      // salvar a imagem no Supabase Storage (opcional)
+      const file = dataURLtoFile(imagemCapturada, 'captura.png');
+      const { data, error: uploadError } = await supabase.storage
+        .from('capturas')
+        .upload(`medicao-${Date.now()}.png`, file, {
+          contentType: 'image/png',
+          upsert: true,
+        });
+  
+      if (uploadError) {
+        console.error('Erro ao subir imagem no storage:', uploadError);
+      }
+  
+      const urlImagem = data?.path
+        ? `https://pfjqttbdxwsvkmtnfwtr.supabase.co/storage/v1/object/public/capturas/${data.path}`
+        : imagemCapturada;
+  
+      // salvar no banco de dados
+      const { error: dbError } = await supabase.from('medicoes_opticas').insert([
+        {
+          ...dadosMedicao,
+          imagem: urlImagem,
+          medidaCorreta_od: medidaCorreta.dnpOD,
+          medidaCorreta_oe: medidaCorreta.dnpOE,
+        },
+      ]);
+  
+      if (dbError) console.error('Erro ao salvar no Supabase DB:', dbError);
+    } catch (e) {
+      console.error('Erro geral ao salvar:', e);
+    }
   };
+  
 
   const reiniciar = () => {
     setDadosMedicao(null);
@@ -116,9 +161,18 @@ const MedicaoOptica = () => {
           <Webcam
             ref={webcamRef}
             screenshotFormat="image/png"
-            videoConstraints={{ facingMode: 'user' }}
+            videoConstraints={{
+              facingMode: 'user',
+              width: { ideal: 480 },
+              height: { ideal: 640 },
+            }}
             mirrored
-            style={{ display: 'none' }}
+            style={{
+              display: 'none',
+              transform: 'scaleX(-1)',
+              zoom: 1,
+              objectFit: 'cover',
+            }}
           />
           <canvas
             ref={canvasRef}
